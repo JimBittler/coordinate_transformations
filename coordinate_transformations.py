@@ -14,23 +14,67 @@ import numpy as np
 def rot2d(xy: np.ndarray |
               tuple[float, float] |
               tuple[tuple[float, float], ...] |
-              tuple[list[float, float], ...] |
+              tuple[list[float], ...] |
               list[float] |
               list[tuple[float, float]] |
-              list[list[float, float]],
-          th: float):
+              list[list[float]],
+          th: float |
+              tuple[float, ...] |
+              list[float] |
+              np.ndarray,
+          deg: bool = False) -> np.ndarray:
     """
     Rotate 2d cartesian coordinates about the origin
-    :param xy: a sequence of cartesian coordinate pairs [[x, y], ...]
-    :param th: angle to about which to rotate xy1 (only one angle argument supported)
-    :return: a numpy.ndarray of cartesian coordinate pairs [[x, y], ...]
+    :param xy: a [2xn] or [2xn] array of cartesian coordinate pairs, i.e.
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]]
+    • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
+    If the shape of xy is [nx2], and n!=2, xy is transposed before calculation.
+    If xy is a tuple or list, it is converted to a Numpy array.
+    :param th: angle of rotation about the origin.
+    If the argument is a scalar, rotation is applied to all coordinate pairs.
+    If the argument is vector-like, rotation of the ith angle is applied to the ith pair, and it must contain exactly n values.
+    :param deg: Set to True if unit of measure of input angle is degrees; otherwise unit of measure is radians
+    :return: an array of n rotated cartesian coordinate pairs, with shape identical to the input.
     """
+
+    # Convert to numpy array
     if not isinstance(xy, np.ndarray):
         xy = np.array(xy)
 
-    xy = np.matmul([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]], xy.T)
+    # if xy is vector, add dimension
+    if max(xy.shape) == 1:
+        xy = xy[:, None]
 
-    return xy.T
+    # Ensure array is correct shape for calculation [2xn]
+    transpose_flag = False
+    if xy.shape[0] != 2 and xy.shape[1] == 2:
+        transpose_flag = True
+        xy = xy.T
+
+    # Convert degrees to radians
+    if deg:
+        th = np.array(th)
+        th = np.pi * th / 180
+
+    # Rotation matrix
+    r = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]], dtype=float)
+
+    # Apply rotation for single angle
+    if isinstance(th, float | int):
+        xy = np.matmul(r, xy)
+    # Apply rotation for n angles
+    else:
+        # r is [2x2xn] (ijk)
+        # xy is [2xn] (jk)
+        # perform standard matrix multiplication for ith r and xy
+        # rotated xy is [2xn] (ik)
+        xy = np.einsum('ijk,jk->ik', r, xy)
+
+    # Match output shape to input shape
+    if transpose_flag:
+        xy = xy.T
+
+    return xy
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -39,25 +83,51 @@ def rot2d(xy: np.ndarray |
 def cart2pol(xy: np.ndarray |
                  tuple[float, float] |
                  tuple[tuple[float, float], ...] |
-                 tuple[list[float, float], ...] |
+                 tuple[list[float], ...] |
                  list[float] |
                  list[tuple[float, float]] |
-                 list[list[float, float]]) -> np.ndarray:
+                 list[list[float]]) -> np.ndarray:
     """
     Convert from cartesian coordinates to polar coordinates in a common frame
-    :param xy: a sequence of cartesian coordinate pairs [[x, y], ...]
-    :return: a numpy.ndarray of polar coordinate pairs [[theta, rho], ...]
+    :param xy: a [2xn] or [2xn] array of cartesian coordinate pairs, i.e.
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]]
+    • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
+    If the shape of xy is [nx2], and n!=2, xy is transposed before calculation.
+    If xy is a tuple or list, it is converted to a Numpy array.
+    :return: an array of polar coordinate pairs [Θ, r], with shape identical to the input
     """
+
+    # Convert to numpy array
     if not isinstance(xy, np.ndarray):
         xy = np.array(xy)
 
+    # if xy is vector, add dimension
+    vector_flag = False
     if len(xy.shape) == 1:
-        xy = xy[None, :]
+        vector_flag = True
+        xy = xy[:, None]
 
-    rho = np.hypot(xy[:, 0], xy[:, 1])
-    theta = np.arctan2(xy[:, 1], xy[:, 0])
+    # Ensure array is correct shape for calculation [2xn]
+    transpose_flag = False
+    if xy.shape[0] != 2 and xy.shape[1] == 2:
+        transpose_flag = True
+        xy = xy.T
 
-    return np.squeeze(np.stack((theta, rho), axis=1))
+    # Transform
+    tr = np.array(
+        (np.arctan2(xy[1, :], xy[0, :]),
+         np.hypot(xy[0, :], xy[1, :])),
+        dtype=float
+    )
+
+    # Match output shape to input shape
+    if transpose_flag:
+        tr = tr.T
+
+    if vector_flag:
+        tr = tr.T.squeeze()
+
+    return tr
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -185,7 +255,13 @@ def test_case():
     x0 = [1, 1, 0]
     x1 = [3, 4]
     x2 = [[3, 4], [5, 12], [8, 15], [7, 24], [20, 21]]
+    x4 = [[1, np.sqrt(0.5), 0], [0, np.sqrt(0.5), 1]]
+
+    t1 = 0.5 * np.pi
     t2 = [0.9273, 1.1760, 1.0808, 1.2870, 0.8097]
+    t3 = [0, 0.25 * np.pi, 0.5 * np.pi]
+    t4 = [0, 45, 90]
+
     r2 = [5, 13, 17, 25, 29]
 
     p1 = [0.9273, 5]
@@ -194,16 +270,42 @@ def test_case():
     x3 = np.add(x0[0:2], x2)
 
     print("--------------------------------")
+    print("rot2d")
+    print("--------------------------------")
+    print("expected")
+    print([-4, 3])
+    print("actual")
+    print(rot2d(xy=x1, th=t1, deg=False))
+
+    print("expected")
+    print([[0, float(-np.sqrt(0.5)), -1], [1, float(np.sqrt(0.5)), 0]])
+    print("actual")
+    print(np.round(rot2d(xy=x4, th=t1, deg=False), 2))
+
+    print("expected")
+    print([[1, 0, -1], [0, 1, 0]])
+    print("actual")
+    print(np.round(rot2d(xy=x4, th=t3, deg=False), 2))
+
+    print("expected")
+    print([[1, 0, -1], [0, 1, 0]])
+    print("actual")
+    print(np.round(rot2d(xy=x4, th=t4, deg=True), 2))
+
+    print("--------------------------------")
     print("cart2pol() test")
     print("--------------------------------")
     print("expected")
     print(p2[0, :])
     print("actual")
-    print(cart2pol(x1))
+    print(cart2pol([3, 4]))
+
     print("expected")
     print(p2)
     print("actual")
     print(cart2pol(x2))
+
+    return
 
     print("--------------------------------")
     print("pol2cart() test")
