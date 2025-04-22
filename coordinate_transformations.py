@@ -142,19 +142,44 @@ def pol2cart(tr: np.ndarray |
                  list[list[float, float]]) -> np.ndarray:
     """
     Convert from polar coordinates to cartesian coordinates in a common frame
-    :param tr: a sequence of polar coordinate pairs [[theta, rho], ...]
-    :return: a numpy.ndarray of cartesian coordinate pairs [[x, y], ...]
+    :param tr:  a [2xn] or [2xn] array of polar coordinate pairs, i.e.
+    • [2xn]: [[Θ0, Θ1, ..., Θn-1], [r0, r1, ..., rn-1]]]
+    • [nx2]: [[Θ0, r0], [Θ1, r1], ..., [Θn-1, rn-1]]
+    If the shape of xy is [nx2], and n!=2, tr is transposed before calculation.
+    If tr is a tuple or list, it is converted to a Numpy array.
+    :return: an array of cartesian coordinate pairs [x, y], with shape identical to the input
     """
+    # Convert to numpy array
     if not isinstance(tr, np.ndarray):
         tr = np.array(tr)
 
+    # if xy is vector, add dimension
+    vector_flag = False
     if len(tr.shape) == 1:
-        tr = tr[None, :]
+        vector_flag = True
+        tr = tr[:, None]
 
-    x = tr[:, 1] * np.cos(tr[:, 0])
-    y = tr[:, 1] * np.sin(tr[:, 0])
+    # Ensure array is correct shape for calculation [2xn]
+    transpose_flag = False
+    if tr.shape[0] != 2 and tr.shape[1] == 2:
+        transpose_flag = True
+        tr = tr.T
 
-    return np.squeeze(np.stack((x, y), axis=1))
+    # Transform
+    xy = tr[1, :] * np.array(
+        (np.cos(tr[0, :]),
+         np.sin(tr[0, :])),
+        dtype=float
+    )
+
+    # Match output shape to input shape
+    if transpose_flag:
+        xy = xy.T
+
+    if vector_flag:
+        xy = xy.T.squeeze()
+
+    return xy
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -305,8 +330,6 @@ def test_case():
     print("actual")
     print(cart2pol(x2))
 
-    return
-
     print("--------------------------------")
     print("pol2cart() test")
     print("--------------------------------")
@@ -314,10 +337,13 @@ def test_case():
     print(x1)
     print("actual")
     print(pol2cart(p1))
+
     print("expected")
     print(np.round(x2, 3))
     print("actual")
     print(np.round(pol2cart(p2), 3))
+
+    return
 
     print("--------------------------------")
     print("pol2cart() ↔ cart2pol() test")
