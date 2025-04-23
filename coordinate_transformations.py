@@ -1,10 +1,12 @@
 """
-A Collection of python functions which perform coordinate transformations
-• cart2pol
-• pol2cart
-• local_pol_2_global_cart
-• global_cart_2_local_pol
-• test case
+A collection of functions which perform coordinate transformations
+• rot2d(...) - two-dimensional rotation about the origin
+• cart2pol(...) - cartesian to polar coordinates in common frame
+• pol2cart(...) - polar to cartesian coordinates in common frame
+• local_pol_2_global_cart(...) - polar coordinates in a local frame to cartesian coordinates in global frame
+• global_cart_2_local_pol(...) - cartesian coordinates in a global frame to polar coordinates in a local frame
+• circle_inv_cart(...) - inversion about a circle
+• test case() - simple test of included functions
 """
 import numpy as np
 
@@ -44,7 +46,7 @@ def _match_shape_of_out_to_in(xy: np.ndarray,
                               vector_flag: bool = False,
                               transpose_flag: bool = True) -> np.ndarray:
     """
-    Helper function to transpose quickly transpose and reduce dimension of input when necessary
+    Helper function to quickly transpose and reduce dimension of input when necessary
     :param xy: array of dimension [mxn] which was output from _convert_to_mxn(...)
     :param vector_flag: flag indicating if xy should be a vector, and therefore empty dimensions should be removed
     :param transpose_flag: flag indicating if the output should be of dimension [nxm]
@@ -55,6 +57,7 @@ def _match_shape_of_out_to_in(xy: np.ndarray,
         xy = xy.T
 
     # Reduce dimension in case of vector
+    # Note: transpose_flag and vector_flag are mutually exclusive, but this is not explicitly stated.
     if vector_flag:
         xy = xy.T.squeeze()
 
@@ -294,12 +297,49 @@ def local_pol_2_global_cart(tr: np.ndarray |
 # ----------------------------------------------------------------------------------------------------------------------
 # Circle Inversion (added locally 12/15/24)
 # ----------------------------------------------------------------------------------------------------------------------
-def circle_inv(p: float | tuple[float, ...] | list[float] | np.ndarray[float],
-               r: float) -> np.ndarray:
-    if not isinstance(p, np.ndarray):
-        p = np.array(p)
-    q = r ** 2 / p
-    return q
+def circle_inv_cart(xy: np.ndarray |
+                        tuple[float, float] |
+                        tuple[tuple[float, float], ...] |
+                        tuple[list[float], ...] |
+                        list[float] |
+                        list[tuple[float, float]] |
+                        list[list[float]],
+                    rad: float |
+                         tuple[float, ...] |
+                         list[float] |
+                         np.ndarray) -> np.ndarray:
+    """
+    Invert input cartesian coordinate pairs about a circle of radius rad
+    :param xy: a sequence or array of cartesian coordinate pairs, i.e.
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]
+    • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
+    If the shape of xy is [nx2], and n!=2, xy is transposed before calculation.
+    If xy is a tuple or list, it is converted to a Numpy array.
+    :param rad: radius of the circle of inversion
+    If the argument is a scalar, inversion is applied to all coordinate pairs.
+    If the argument is vector-like, inversion of the ith angle is applied to the ith pair, and it must contain exactly n values.
+    :return: an array of cartesian coordinate pairs [x, y], with shape identical to the input
+    """
+
+    # Convert input to dimension [2xn]
+    xy, v_flag, t_flag = _convert_to_mxn(xy, 2)
+
+    # Convert input to dimension [1xn]
+    rad, _, _ = _convert_to_mxn(rad, 1)
+
+    # Convert to polar coordinates
+    tr = cart2pol(xy)
+
+    # Invert about circle of radius rad
+    tr[1, :] = rad ** 2 / tr[1, :]
+
+    # Convert to cartesian coordinates
+    xy = pol2cart(tr)
+
+    # Match output shape to input shape
+    xy = _match_shape_of_out_to_in(xy, v_flag, t_flag)
+
+    return xy
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Test Case
@@ -386,6 +426,14 @@ def test_case():
     print("# Test: global_cart_2_local_pol(...) ↔ local_pol_2_global_cart(...)")
     val00 = local_pol_2_global_cart(tr=global_cart_2_local_pol(xy=xy, qf=qf), qf=qf)
     val01 = global_cart_2_local_pol(xy=local_pol_2_global_cart(tr=tr, qf=qf), qf=qf)
+    print(np.round(val00, 3))
+    print("\n")
+
+    # --------------------------------
+    # circle_inv_cart(...)
+    # --------------------------------
+    print("# Test: circle_inv_cart(...)")
+    val00 = circle_inv_cart(xy=xy.T, rad=(2, 1, 2))
     print(np.round(val00, 3))
     print("\n")
 
