@@ -8,6 +8,58 @@ A Collection of python functions which perform coordinate transformations
 """
 import numpy as np
 
+def _convert_to_mxn(xy: np.ndarray |
+                     tuple[float, float] |
+                     tuple[tuple[float, float], ...] |
+                     tuple[list[float], ...] |
+                     list[float] |
+                     list[tuple[float, float]] |
+                     list[list[float]],
+                 dim_m: float) -> tuple[np.ndarray, bool, bool]:
+    """
+    Helper function which converts an input sequence or array to an array of m rows by n columns, where m is specified and n is arbitrary
+    :param xy: a sequence or array
+    :param dim_m: number of rows in output array
+    :return: tuple containing the [mxn] array, flag indicating the input was a vector, flag indicating the input was transposed
+    """
+    # Convert to numpy array
+    if not isinstance(xy, np.ndarray):
+        xy = np.array(xy)
+
+    # if xy is vector, add dimension
+    vector_flag = False
+    if len(xy.shape) == 1:
+        vector_flag = True
+        xy = xy[:, None]
+
+    # Ensure array is correct shape for calculation [mxn]
+    transpose_flag = False
+    if xy.shape[0] != dim_m and xy.shape[1] == dim_m:
+        transpose_flag = True
+        xy = xy.T
+
+    return xy, vector_flag, transpose_flag
+
+def _match_shape_of_out_to_in(xy: np.ndarray,
+                              vector_flag: bool = False,
+                              transpose_flag: bool = True) -> np.ndarray:
+    """
+    Helper function to transpose quickly transpose and reduce dimension of input when necessary
+    :param xy: array of dimension [mxn] which was output from _convert_to_mxn(...)
+    :param vector_flag: flag indicating if xy should be a vector, and therefore empty dimensions should be removed
+    :param transpose_flag: flag indicating if the output should be of dimension [nxm]
+    :return: reshaped array
+    """
+    # Transpose
+    if transpose_flag:
+        xy = xy.T
+
+    # Reduce dimension in case of vector
+    if vector_flag:
+        xy = xy.T.squeeze()
+
+    return xy
+
 # ----------------------------------------------------------------------------------------------------------------------
 # 2D Rotation
 # ----------------------------------------------------------------------------------------------------------------------
@@ -25,8 +77,8 @@ def rot2d(xy: np.ndarray |
           deg: bool = False) -> np.ndarray:
     """
     Rotate 2d cartesian coordinates about the origin
-    :param xy: a [2xn] or [2xn] array of cartesian coordinate pairs, i.e.
-    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]]
+    :param xy: a sequence or array of cartesian coordinate pairs, i.e.
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]
     • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
     If the shape of xy is [nx2], and n!=2, xy is transposed before calculation.
     If xy is a tuple or list, it is converted to a Numpy array.
@@ -37,19 +89,8 @@ def rot2d(xy: np.ndarray |
     :return: an array of n rotated cartesian coordinate pairs, with shape identical to the input.
     """
 
-    # Convert to numpy array
-    if not isinstance(xy, np.ndarray):
-        xy = np.array(xy)
-
-    # if xy is vector, add dimension
-    if max(xy.shape) == 1:
-        xy = xy[:, None]
-
-    # Ensure array is correct shape for calculation [2xn]
-    transpose_flag = False
-    if xy.shape[0] != 2 and xy.shape[1] == 2:
-        transpose_flag = True
-        xy = xy.T
+    # Convert input to dimension [2xn]
+    xy, v_flag, t_flag = _convert_to_mxn(xy, 2)
 
     # Convert degrees to radians
     if deg:
@@ -71,8 +112,7 @@ def rot2d(xy: np.ndarray |
         xy = np.einsum('ijk,jk->ik', r, xy)
 
     # Match output shape to input shape
-    if transpose_flag:
-        xy = xy.T
+    xy = _match_shape_of_out_to_in(xy, v_flag, t_flag)
 
     return xy
 
@@ -89,29 +129,16 @@ def cart2pol(xy: np.ndarray |
                  list[list[float]]) -> np.ndarray:
     """
     Convert from cartesian coordinates to polar coordinates in a common frame
-    :param xy: a [2xn] or [2xn] array of cartesian coordinate pairs, i.e.
-    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]]
+    :param xy: a sequence or array of cartesian coordinate pairs, i.e.
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]
     • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
     If the shape of xy is [nx2], and n!=2, xy is transposed before calculation.
     If xy is a tuple or list, it is converted to a Numpy array.
     :return: an array of polar coordinate pairs [Θ, r], with shape identical to the input
     """
 
-    # Convert to numpy array
-    if not isinstance(xy, np.ndarray):
-        xy = np.array(xy)
-
-    # if xy is vector, add dimension
-    vector_flag = False
-    if len(xy.shape) == 1:
-        vector_flag = True
-        xy = xy[:, None]
-
-    # Ensure array is correct shape for calculation [2xn]
-    transpose_flag = False
-    if xy.shape[0] != 2 and xy.shape[1] == 2:
-        transpose_flag = True
-        xy = xy.T
+    # Convert input to dimension [2xn]
+    xy, v_flag, t_flag = _convert_to_mxn(xy, 2)
 
     # Transform
     tr = np.array(
@@ -121,11 +148,7 @@ def cart2pol(xy: np.ndarray |
     )
 
     # Match output shape to input shape
-    if transpose_flag:
-        tr = tr.T
-
-    if vector_flag:
-        tr = tr.T.squeeze()
+    tr = _match_shape_of_out_to_in(tr, v_flag, t_flag)
 
     return tr
 
@@ -142,28 +165,15 @@ def pol2cart(tr: np.ndarray |
                  list[list[float, float]]) -> np.ndarray:
     """
     Convert from polar coordinates to cartesian coordinates in a common frame
-    :param tr:  a [2xn] or [2xn] array of polar coordinate pairs, i.e.
-    • [2xn]: [[Θ0, Θ1, ..., Θn-1], [r0, r1, ..., rn-1]]]
+    :param tr: a sequence or array of polar coordinate pairs, i.e.
+    • [2xn]: [[Θ0, Θ1, ..., Θn-1], [r0, r1, ..., rn-1]]
     • [nx2]: [[Θ0, r0], [Θ1, r1], ..., [Θn-1, rn-1]]
     If the shape of xy is [nx2], and n!=2, tr is transposed before calculation.
     If tr is a tuple or list, it is converted to a Numpy array.
     :return: an array of cartesian coordinate pairs [x, y], with shape identical to the input
     """
-    # Convert to numpy array
-    if not isinstance(tr, np.ndarray):
-        tr = np.array(tr)
-
-    # if xy is vector, add dimension
-    vector_flag = False
-    if len(tr.shape) == 1:
-        vector_flag = True
-        tr = tr[:, None]
-
-    # Ensure array is correct shape for calculation [2xn]
-    transpose_flag = False
-    if tr.shape[0] != 2 and tr.shape[1] == 2:
-        transpose_flag = True
-        tr = tr.T
+    # Convert input to dimension [2xn]
+    tr, v_flag, t_flag = _convert_to_mxn(tr, 2)
 
     # Transform
     xy = tr[1, :] * np.array(
@@ -173,11 +183,7 @@ def pol2cart(tr: np.ndarray |
     )
 
     # Match output shape to input shape
-    if transpose_flag:
-        xy = xy.T
-
-    if vector_flag:
-        xy = xy.T.squeeze()
+    xy = _match_shape_of_out_to_in(xy, v_flag, t_flag)
 
     return xy
 
@@ -188,42 +194,52 @@ def pol2cart(tr: np.ndarray |
 def global_cart_2_local_pol(xy: np.ndarray |
                                 tuple[float, float] |
                                 tuple[tuple[float, float], ...] |
-                                tuple[list[float, float], ...] |
+                                tuple[list[float], ...] |
                                 list[float] |
                                 list[tuple[float, float]] |
-                                list[list[float, float]],
+                                list[list[float]],
                             qf: np.ndarray |
                                 tuple[float, float, float] |
-                                list[float, float, float]) -> np.ndarray:
+                                tuple[tuple[float, float, float], ...] |
+                                tuple[list[float], ...] |
+                                list[float] |
+                                list[tuple[float, float, float]] |
+                                list[list[float]]) -> np.ndarray:
     """
     Convert cartesian data in a global frame, to polar data in a local frame.
-    :param xy: a sequence of cartesian coordinate pairs [[x, y], ...]
-    :param qf: local frame configuration [x, y, Θ] in global frame
-    :return: tr: a numpy.ndarray of polar coordinate pairs [[theta, rho], ...]
+    :param xy: a sequence or array of cartesian coordinate pairs
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]
+    • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
+    :param qf: local frame configuration in the global frame
+    • [3x1]: [x, y, φ]
+    or a sequence or array of local frame configurations in global frame
+    • [3xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1], [φ0, φ1, ..., φn-1]]
+    • [nx3]: [[x0, y0, φ0], [x1, y1, φ1], ..., [xn-1, yn-1, φn-1]]
+    if the latter is provided, the ith xy pair will be mapped to the ith local frame
+    :return: tr: an array of polar coordinate pairs, with shape identical to the input.
+    • [2xn]: [[Θ0, Θ1, ..., Θn-1], [r0, r1, ..., rn-1]]
+    • [nx2]: [[Θ0, r0], [Θ1, r1], ..., [Θn-1, rn-1]]
     """
 
-    if not isinstance(xy, np.ndarray):
-        xy = np.array(xy)
+    # Convert input to dimension [2xn]
+    xy, v_flag, t_flag = _convert_to_mxn(xy, 2)
 
-    if not isinstance(qf, np.ndarray):
-        qf = np.array(qf)
+    # Convert input to dimension [3xn]
+    qf, _, _ = _convert_to_mxn(qf, 3)
 
     # Translate data from global frame to local frame
-    xy = xy - qf[0:2]
+    xy = xy - qf[0:2, :]
 
     # Convert to polar coordinates
     tr = cart2pol(xy)
 
-    # Add dimension if necessary; permits boradcast "rotate" operation
-    if len(xy.shape) == 1:
-        tr = tr[None, :]
-
     # Rotate
-    tr = tr.T
-    tr[0, :] -= qf[2]
-    tr = tr.T
+    tr[0, :] -= qf[2, :]
 
-    return tr.squeeze()
+    # Match output shape to input shape
+    tr = _match_shape_of_out_to_in(tr, v_flag, t_flag)
+
+    return tr
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -241,27 +257,39 @@ def local_pol_2_global_cart(tr: np.ndarray |
                                 list[float, float, float]) -> np.ndarray:
     """
     Convert polar data in a local frame, to cartesian data in a global frame.
-    :param tr: a sequence of polar coordinate pairs [[theta, rho], ...]
-    :param qf: local frame configuration [x, y, Θ] in global frame
-    :return: a numpy.ndarray of cartesian coordinate pairs [[x, y], ...]
+    :param tr: a sequence or array of polar coordinate pairs
+    • [2xn]: [[Θ0, Θ1, ..., Θn-1], [r0, r1, ..., rn-1]]
+    • [nx2]: [[Θ0, r0], [Θ1, r1], ..., [Θn-1, rn-1]]
+    :param qf: local frame configuration in the global frame
+    • [3x1]: [x, y, φ]
+    or a sequence or array of local frame configurations in global frame
+    • [3xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1], [φ0, φ1, ..., φn-1]]
+    • [nx3]: [[x0, y0, φ0], [x1, y1, φ1], ..., [xn-1, yn-1, φn-1]]
+    if the latter is provided, the ith tr pair will be mapped from the ith local frame
+    :return: xy: an array of cartesian coordinate pairs, with shape identical to the input.
+    • [2xn]: [[x0, x1, ..., xn-1], [y0, y1, ..., yn-1]]
+    • [nx2]: [[x0, y0], [x1, y1], ..., [xn-1, yn-1]]
+
     """
+    # Convert input to dimension [2xn]
+    tr, v_flag, t_flag = _convert_to_mxn(tr, 2)
 
-    if not isinstance(tr, np.ndarray):
-        tr = np.array(tr)
-
-    if not isinstance(qf, np.ndarray):
-        qf = np.array(qf)
+    # Convert input to dimension [3xn]
+    qf, _, _ = _convert_to_mxn(qf, 3)
 
     # Convert data from polar coordinates to cartesian coordinates in local frame
     xy = pol2cart(tr)
 
     # Rotate
-    xy = rot2d(xy, float(qf[2]))
+    xy = rot2d(xy, qf[2, :])
 
     # Translate
-    xy = xy + qf[0:2]
+    xy = xy + qf[0:2, :]
 
-    return xy.squeeze()
+    # Match output shape to input shape
+    xy = _match_shape_of_out_to_in(xy, v_flag, t_flag)
+
+    return xy
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Circle Inversion (added locally 12/15/24)
@@ -277,103 +305,93 @@ def circle_inv(p: float | tuple[float, ...] | list[float] | np.ndarray[float],
 # Test Case
 # ----------------------------------------------------------------------------------------------------------------------
 def test_case():
-    x0 = [1, 1, 0]
-    x1 = [3, 4]
-    x2 = [[3, 4], [5, 12], [8, 15], [7, 24], [20, 21]]
-    x4 = [[1, np.sqrt(0.5), 0], [0, np.sqrt(0.5), 1]]
+    # Cartesian [x, y]
+    xy = np.array(
+        ((1.0, 0.707, 0.0),
+         (0.0, 0.707, 1.0)),
+        dtype=float
+    )
 
-    t1 = 0.5 * np.pi
-    t2 = [0.9273, 1.1760, 1.0808, 1.2870, 0.8097]
-    t3 = [0, 0.25 * np.pi, 0.5 * np.pi]
-    t4 = [0, 45, 90]
+    # polar [theta, rho]
+    tr = np.array(
+        ((0.0, 0.25 * np.pi, 0.5 * np.pi),
+         (1.0, 1.0, 1.0)),
+        dtype=float
+    )
 
-    r2 = [5, 13, 17, 25, 29]
+    # polar [theta, rho], where rho is in degrees
+    tr_deg = np.array(
+        ((0.0, 45.0, 90.0),
+         (1.0, 1.0, 1.0)),
+        dtype=float
+    )
 
-    p1 = [0.9273, 5]
-    p2 = np.stack((t2, r2), axis=1)
+    # Cartesian frame configurations [x, y, phi]
+    qf = np.array(
+        ((0.0, 1.0, 1.0),
+         (0.0, 1.0, 0.0),
+         (np.pi, 0.0, 0.5 * np.pi)),
+        dtype=float
+    )
 
-    x3 = np.add(x0[0:2], x2)
+    # --------------------------------
+    # rot2d(...)
+    # --------------------------------
+    print("# Test: rot2d(...)")
+    val00 = rot2d(xy, tr[0, :])
+    val01 = rot2d(xy.T, list(tr[0, :]))
+    val02 = rot2d(xy, tr[0, 1])
+    val03 = rot2d(xy[:, 1], tr[0, 1])
+    val04 = rot2d(tuple(xy[:, 1]), tr[0, 1])
+    val05 = rot2d(xy, tr_deg[0, :], deg=True)
+    print(np.round(val05, 3))
+    print("\n")
 
-    print("--------------------------------")
-    print("rot2d")
-    print("--------------------------------")
-    print("expected")
-    print([-4, 3])
-    print("actual")
-    print(rot2d(xy=x1, th=t1, deg=False))
+    # --------------------------------
+    # cart2pol(...)
+    # --------------------------------
+    print("# Test: cart2pol(...)")
+    val00 = cart2pol(xy)
+    val01 = cart2pol(tuple(xy))
+    val02 = cart2pol(list(xy.T))
+    val03 = cart2pol(xy[:, 0])
+    print(np.round(val03, 3))
+    print("\n")
 
-    print("expected")
-    print([[0, float(-np.sqrt(0.5)), -1], [1, float(np.sqrt(0.5)), 0]])
-    print("actual")
-    print(np.round(rot2d(xy=x4, th=t1, deg=False), 2))
+    # --------------------------------
+    # pol2cart(...)
+    # --------------------------------
+    print("# Test: pol2cart(...)")
+    val00 = pol2cart(tr)
+    val01 = pol2cart(tuple(tr))
+    val02 = pol2cart(list(tr.T))
+    val03 = pol2cart(tr[:, 1])
+    print(np.round(val03, 3))
+    print("\n")
 
-    print("expected")
-    print([[1, 0, -1], [0, 1, 0]])
-    print("actual")
-    print(np.round(rot2d(xy=x4, th=t3, deg=False), 2))
+    # --------------------------------
+    # pol2cart(...) ↔ cart2pol(...)
+    # --------------------------------
+    print("# Test: pol2cart(...) ↔ cart2pol(...)")
+    val00 = pol2cart(cart2pol(xy))
+    val01 = cart2pol(pol2cart(tr))
+    val02 = pol2cart(cart2pol(xy[:, 0]))
+    val03 = pol2cart(cart2pol(tuple(xy.T)))
+    print(np.round(val03, 3))
+    print("\n")
 
-    print("expected")
-    print([[1, 0, -1], [0, 1, 0]])
-    print("actual")
-    print(np.round(rot2d(xy=x4, th=t4, deg=True), 2))
-
-    print("--------------------------------")
-    print("cart2pol() test")
-    print("--------------------------------")
-    print("expected")
-    print(p2[0, :])
-    print("actual")
-    print(cart2pol([3, 4]))
-
-    print("expected")
-    print(p2)
-    print("actual")
-    print(cart2pol(x2))
-
-    print("--------------------------------")
-    print("pol2cart() test")
-    print("--------------------------------")
-    print("expected")
-    print(x1)
-    print("actual")
-    print(pol2cart(p1))
-
-    print("expected")
-    print(np.round(x2, 3))
-    print("actual")
-    print(np.round(pol2cart(p2), 3))
-
-    return
-
-    print("--------------------------------")
-    print("pol2cart() ↔ cart2pol() test")
-    print("--------------------------------")
-    print(np.round((x2, pol2cart(cart2pol(x2))), 3))
-    print(np.round((p2, cart2pol(pol2cart(p2))), 3))
-
-    print("--------------------------------")
-    print("global_cart_2_local_pol() test")
-    print("--------------------------------")
-    print(np.round(p2[0], 3))
-    print(np.round(global_cart_2_local_pol(xy=x3[0], qf=x0), 3))
-
-    print(np.round(p2, 3))
-    print(np.round(global_cart_2_local_pol(xy=x3, qf=x0), 3))
-
-    print("--------------------------------")
-    print("local_pol_2_global_cart() test")
-    print("--------------------------------")
-    print(np.round(x3[0], 3))
-    print(np.round(local_pol_2_global_cart(tr=p2[0], qf=x0), 3))
-
-    print(np.round(x3, 3))
-    print(np.round(local_pol_2_global_cart(tr=p2, qf=x0), 3))
-
+    # --------------------------------
+    # global_cart_2_local_pol(...) ↔ local_pol_2_global_cart(...)
+    # --------------------------------
+    print("# Test: global_cart_2_local_pol(...) ↔ local_pol_2_global_cart(...)")
+    val00 = local_pol_2_global_cart(tr=global_cart_2_local_pol(xy=xy, qf=qf), qf=qf)
+    val01 = global_cart_2_local_pol(xy=local_pol_2_global_cart(tr=tr, qf=qf), qf=qf)
+    print(np.round(val00, 3))
+    print("\n")
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Call to test case for validation purposes
 # ---------------------------------------------------------------------------------------------------------------------
 # Note: I think best practice is to save the test code in its own module, but I don't want to do that.
-# Note: Keep the call to test_case() commented out during actual use
 if __name__ == "__main__":
     test_case()
